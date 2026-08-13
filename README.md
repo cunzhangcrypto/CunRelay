@@ -155,6 +155,22 @@ git push -u origin main
 
 > 线上 `config/config.yaml` 里的 `follow` 列表建议留空，用 `FOLLOW_CONFIG` Secret 传入，避免公开仓库暴露订阅信息。
 
+**`FOLLOW_CONFIG` 格式**（JSON 字符串，与 config.yaml 的 `follow` 结构一致）：
+
+```json
+{"youtube": [{"name": "Web3村长", "channel_id": "UC5MbekhrH8iyFBQLbccBSRg"}]}
+```
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `name` | ✅ | 监控源显示名（UI 顶部展示、日志归属） |
+| `channel_id` | 二选一 | YouTube 频道 ID（如 `UCxxxxxxxx`） |
+| `handle` | 二选一 | 或用 `@用户名` 形式（如 `"@cunzhangcrypto"`） |
+
+- 支持**多个频道**：在 `youtube` 数组里并列即可
+- **优先级**：`FOLLOW_CONFIG` 环境变量 > `config/config.yaml` 的 `follow`
+- 本地开发时直接在 config.yaml 里填同样结构即可
+
 ### 4. 定时与手动触发
 
 - **定时**：默认每天北京时间 20:00 自动跑（`.github/workflows/relay.yml` 中 `cron: "0 12 * * *"`，UTC 时间）。改你自己的时间只需改这一处
