@@ -1,0 +1,1 @@
+"""Collector base types."""

@@ -1,0 +1,80 @@
+name: CunRelay Pipeline
+
+on:
+  schedule:
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 每天北京时间 20:00 准时跑一次
+    #   GitHub Actions 用 UTC 时间，北京比 UTC 快 8 小时
+    #   北京 20:00 = UTC 12:00
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    - cron: "0 12 * * *"
+  # 支持手动触发：Actions → CunRelay Pipeline → Run workflow
+  workflow_dispatch:
+
+concurrency:
+  group: cunrelay-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies
+        run: uv sync --no-dev
+
+      # 从工作流自身解析 cron（如 "0 12 * * *"，UTC 时间），
+      # 交给导出步骤换算成部署者本地时区，供前端自动刷新窗口使用。
+      # 这样改 cron 时无需再手动同步任何配置。
+      - name: Resolve pipeline cron
+        id: cron
+        run: |
+          CRON=$(sed -n 's/^[[:space:]]*-[[:space:]]*cron:[[:space:]]*"\([^"]*\)".*/\1/p' .github/workflows/relay.yml | head -n1)
+          echo "cron=${CRON}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore database from cache
+        uses: actions/cache@v4
+        id: db-cache
+        with:
+          path: output/cunrelay.db
+          key: cunrelay-db-v1
+
+      - name: Run CunRelay (collect + send + export)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_KEY_SECRET: ${{ secrets.X_API_KEY_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          FOLLOW_CONFIG: ${{ secrets.FOLLOW_CONFIG || vars.FOLLOW_CONFIG || '' }}
+          PIPELINE_CRON: ${{ steps.cron.outputs.cron }}
+        run: uv run python -m cunrelay
+
+      - name: Save database to cache
+        uses: actions/cache/save@v4
+        with:
+          path: output/cunrelay.db
+          key: cunrelay-db-v1
+
+      # public/data.json 由上面的 run 生成，UI 是纯静态文件
+      - name: Deploy UI to Cloudflare Pages
+        run: npx wrangler pages deploy public/ --project-name=${{ vars.CUNRELAY_PROJECT_NAME || 'cunrelay' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

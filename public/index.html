@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CunRelay · 内容分发控制台</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark"><img src="logo-mark.svg" alt="CunRelay logo"></div>
+    <div class="brand-text">
+      <h1>CunRelay</h1>
+      <p>AI 驱动的全自动内容发布工具</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <a class="source-tag" id="source-tag" href="#" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.2"></circle>
+        <path d="M19.1 12a7.1 7.1 0 0 0-2.3-5.2M4.9 12a7.1 7.1 0 0 1 2.3-5.2M12 4.9v0"></path>
+        <path d="M9.2 15.8 8 21M14.8 15.8 16 21"></path>
+      </svg>
+      <span class="src-label">监控源</span>
+      <span class="src-names" id="src-names">—</span>
+    </a>
+    <span class="live"><i></i><span id="live-text">LIVE</span></span>
+    <button id="btn-refresh" class="btn">⟳ 刷新</button>
+  </div>
+</header>
+
+<main>
+  <section class="stats" id="stats">
+    <div class="stat-card">
+      <span class="stat-label">待发送</span>
+      <strong id="st-queued">0</strong>
+      <div class="stat-chips" id="ch-queued"></div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">已发布</span>
+      <strong id="st-published">0</strong>
+      <div class="stat-chips" id="ch-published"></div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">失败</span>
+      <strong id="st-failed">0</strong>
+      <div class="stat-chips" id="ch-failed"></div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">成功率</span>
+      <strong id="st-rate">—</strong>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>发布队列</h2>
+      <div class="filters">
+        <select id="f-platform">
+          <option value="all">全平台</option>
+          <option value="telegram">Telegram</option>
+          <option value="x">X (Twitter)</option>
+          <option value="threads">Threads</option>
+        </select>
+        <select id="f-status">
+          <option value="all">全部状态</option>
+          <option value="queued">待发送</option>
+          <option value="published">已发布</option>
+          <option value="failed">失败</option>
+        </select>
+        <span id="last-update" class="muted"></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>封面</th>
+            <th>视频</th>
+            <th>平台</th>
+            <th>状态</th>
+            <th>计划发送</th>
+            <th>实际发布</th>
+            <th>发布链接</th>
+          </tr>
+        </thead>
+        <tbody id="posts-body">
+          <tr><td colspan="7" class="empty">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager" id="pager-posts"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>发布日志 <a id="sheets-link" class="tag-note" target="_blank" rel="noopener">同步 Google Sheets ↗</a></h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>平台</th>
+            <th>状态</th>
+            <th>视频</th>
+            <th>消息</th>
+          </tr>
+        </thead>
+        <tbody id="logs-body">
+          <tr><td colspan="5" class="empty">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager" id="pager-logs"></div>
+  </section>
+
+  <footer class="foot">
+    <div>CunRelay v0.1 · 流水线 GitHub Actions · 记录同步 Google Sheets · UI 部署 Cloudflare Pages</div>
+    <div class="foot-copy" id="foot-copy"></div>
+  </footer>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

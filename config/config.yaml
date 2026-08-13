@@ -1,0 +1,86 @@
+# ═══════════════════════════════════════════════════════════════
+#                    CunRelay 配置文件
+#                        Version: 0.1
+# ═══════════════════════════════════════════════════════════════
+
+# ─── 基础设置 ─────────────────────────────────────────────────
+app:
+  timezone: "Asia/Shanghai"
+  # 只处理过去 N 小时内发布的视频
+  max_item_age_hours: 72
+  # 输出目录（SQLite 数据库 / 封面图 / 日志）
+  output_dir: "output"
+
+# ─── 关注列表 ─────────────────────────────────────────────────
+# ⚠️ 公开仓库建议通过 FOLLOW_CONFIG 环境变量（JSON）传入，避免暴露订阅信息
+follow:
+  youtube:
+    - name: "Web3村长"
+      channel_id: "UC5MbekhrH8iyFBQLbccBSRg"
+
+# ─── AI 配置 ─────────────────────────────────────────────────
+ai:
+  model: "deepseek-chat"
+  api_key: "${DEEPSEEK_API_KEY}"
+  api_base: "https://api.deepseek.com"
+  timeout: 180
+  # 传入 AI 的字幕最大字符数（截断防止超长）
+  max_transcript_chars: 6000
+
+# ─── 发布配置 ─────────────────────────────────────────────────
+publish:
+  # 平台错峰偏移（分钟）。
+  # 每天 20:00 定时跑一次时：offset=0 表示当次运行即发送。
+  # 若某平台希望"推迟到下一次定时运行再发"（即次日 20:00），
+  # 可设 offset 大于 0（如 x: 1440 = 第二天发送）。
+  offsets:
+    telegram: 0
+    x: 0
+    threads: 0
+
+  # 失败重试：最多尝试 max_retries 次（2 = 首发 + 只重试 1 次），
+  # 重试间隔 retry_delay_minutes 分钟
+  max_retries: 2
+  retry_delay_minutes: 30
+
+  telegram:
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+
+  x:
+    api_key: "${X_API_KEY}"
+    api_key_secret: "${X_API_KEY_SECRET}"
+    access_token: "${X_ACCESS_TOKEN}"
+    access_token_secret: "${X_ACCESS_TOKEN_SECRET}"
+
+  threads:
+    # Threads 官方 API 处于 limited availability，V1 暂缓
+    enabled: false
+
+# ─── Google Sheets 发布日志 ───────────────────────────────────
+sheets:
+  enabled: true
+  # 凭据：优先读 GOOGLE_SHEETS_CREDENTIALS 环境变量（JSON），
+  # 为空时回退读取 credentials_file 本地文件
+  credentials_file: "config/credentials.json"
+  spreadsheet_id: "1hh6azGMOWm6STwMokc4Uz6Wv11bqh_DEtZddSgCl0A4"
+  sheet_name: "publish_log"
+
+# ─── Web UI ───────────────────────────────────────────────────
+web:
+  host: "127.0.0.1"
+  port: 8080
+
+  # 页面自动刷新策略（结果驱动，不依赖 Actions 准点开始）：
+  #   只判断"今天的数据快照生成了没"——Actions 只要当天跑完一次，
+  #   data.json 的 generated_at 就是今天，前端检测到即刷新并停止。
+  # watch_start          监测开始时间（北京时间 HH:MM）。
+  #                      线上部署时由 CI 从 relay.yml 的 cron 自动推导换算，
+  #                      无需手动同步；这里仅在本地开发时兜底使用。
+  # watch_duration_hours 监测窗口时长（小时）：覆盖 Actions 延迟，
+  #                      默认 6 小时足够覆盖绝大多数排队延迟。
+  # interval_seconds     监测期间的轮询间隔
+  auto_refresh:
+    watch_start: "20:00"
+    watch_duration_hours: 6
+    interval_seconds: 30

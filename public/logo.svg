@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4B3FE3"/>
+      <stop offset="1" stop-color="#22A5F7"/>
+    </linearGradient>
+    <linearGradient id="word" x1="372" y1="74" x2="836" y2="286" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4B3FE3"/>
+      <stop offset="1" stop-color="#22A5F7"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="0.24" cy="0.10" r="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 徽标（圆角渐变 + Relay 网络节点） -->
+  <g transform="translate(24, 24) scale(0.61)">
+    <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+    <rect width="512" height="512" rx="118" fill="url(#shine)"/>
+    <g stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" fill="none" opacity="0.88">
+      <line x1="250" y1="256" x2="152" y2="318"/>
+      <line x1="250" y1="256" x2="330" y2="190"/>
+      <line x1="250" y1="256" x2="366" y2="340"/>
+    </g>
+    <circle cx="250" cy="256" r="52" fill="#FFFFFF"/>
+    <circle cx="152" cy="318" r="36" fill="none" stroke="#FFFFFF" stroke-width="24"/>
+    <circle cx="330" cy="190" r="36" fill="none" stroke="#FFFFFF" stroke-width="24"/>
+    <circle cx="366" cy="340" r="36" fill="none" stroke="#FFFFFF" stroke-width="24"/>
+  </g>
+
+  <!-- 字标 -->
+  <text x="372" y="212" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="132" font-weight="700" letter-spacing="1">
+    <tspan fill="#101828">Cun</tspan><tspan fill="url(#word)">Relay</tspan>
+  </text>
+  <text x="376" y="272" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="36" font-weight="400" fill="#667085" letter-spacing="6">
+    YouTube → AI → 多平台自动分发
+  </text>
+</svg>
