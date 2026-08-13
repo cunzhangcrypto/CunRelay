@@ -18,6 +18,7 @@ from .ai import generate_platform_copy
 from .collectors.youtube import YouTubeCollector, download_thumbnail, fetch_transcript
 from .config import load_config, project_root
 from .export import export_records
+from .publishers import enabled_platforms
 from .scheduler import enqueue_video, local_now, send_due
 from .sheets import SheetsLogger
 from .storage import Storage
@@ -29,6 +30,41 @@ def _filter_by_age(items, max_hours, now):
         return items
     cutoff = now - timedelta(hours=max_hours)
     return [it for it in items if it.published and it.published >= cutoff]
+
+
+def _enrich_and_enqueue(storage: Storage, item, config: dict,
+                        thumb_dir: Path, ai_cfg: dict, api_key: str | None) -> None:
+    """抓字幕/封面 → AI 生成 → 入队。
+
+    enqueue_video 内部按「视频 + 平台」判重（has_post），幂等：
+    已入队的平台自动跳过，只补齐缺失的平台。
+    """
+    video_id = item.item_id.split(":", 1)[-1]
+    transcript = fetch_transcript(video_id, ai_cfg.get("max_transcript_chars", 6000))
+    if transcript:
+        print(f"    transcript: {len(transcript)} chars")
+
+    thumb = download_thumbnail(video_id, str(thumb_dir))
+    if thumb:
+        storage.update_thumb(item.item_id, thumb)
+
+    if not api_key:
+        print("    (skipped AI copy — no API key)")
+        return
+    copy = generate_platform_copy(
+        video=item,
+        transcript=transcript,
+        api_key=api_key,
+        model=ai_cfg.get("model", "deepseek-chat"),
+        api_base=ai_cfg.get("api_base", "https://api.deepseek.com"),
+        timeout=int(ai_cfg.get("timeout", 180)),
+        max_transcript_chars=int(ai_cfg.get("max_transcript_chars", 6000)),
+    )
+    if not copy:
+        print(f"    AI copy failed for '{item.title}', skipped")
+        return
+    created = enqueue_video(storage, item, copy, config, thumb)
+    print(f"    enqueued {created} posts")
 
 
 def _collect(storage: Storage, config: dict) -> None:
@@ -79,45 +115,23 @@ def _collect(storage: Storage, config: dict) -> None:
         if not storage.is_new_video(item.item_id):
             continue
         print(f"\n  → New video: {item.title}")
-
-        # 1. transcript
-        video_id = item.item_id.split(":", 1)[-1]
-        transcript = fetch_transcript(video_id, ai_cfg.get("max_transcript_chars", 6000))
-        if transcript:
-            print(f"    transcript: {len(transcript)} chars")
-
-        # 2. thumbnail
-        thumb = download_thumbnail(video_id, str(thumb_dir))
-        if thumb:
-            storage.update_thumb(item.item_id, thumb)
-
-        # 3. AI copy (skip video if AI not configured)
-        if not api_key:
-            storage.mark_video_seen(item.item_id, item.source, item.source_name,
-                                    item.title, item.url, thumb)
-            print("    (skipped AI copy — no API key)")
-            continue
-
-        copy = generate_platform_copy(
-            video=item,
-            transcript=transcript,
-            api_key=api_key,
-            model=ai_cfg.get("model", "deepseek-chat"),
-            api_base=ai_cfg.get("api_base", "https://api.deepseek.com"),
-            timeout=int(ai_cfg.get("timeout", 180)),
-            max_transcript_chars=int(ai_cfg.get("max_transcript_chars", 6000)),
-        )
-        if not copy:
-            print(f"    AI copy failed for '{item.title}', marking seen and skipping")
-            storage.mark_video_seen(item.item_id, item.source, item.source_name,
-                                    item.title, item.url, thumb)
-            continue
-
-        # 4. enqueue
         storage.mark_video_seen(item.item_id, item.source, item.source_name,
-                                item.title, item.url, thumb)
-        created = enqueue_video(storage, item, copy, config, thumb)
-        print(f"    enqueued {created} posts")
+                                item.title, item.url, None)
+        _enrich_and_enqueue(storage, item, config, thumb_dir, ai_cfg, api_key)
+
+    # ── 补发缺失平台 ────────────────────────────────────────────
+    # 72h 窗口内已 seen 的视频，若当前启用的平台有没发布过的，
+    # 重新入队补齐（例如：今天只发了 Telegram，明天启用 X 后补发 X）。
+    # enqueue_video 幂等：已发布的平台自动跳过，只补缺失平台。
+    for it in aged:
+        if storage.is_new_video(it.item_id):
+            continue
+        missing = [p for p in enabled_platforms(config)
+                   if not storage.has_post(it.item_id, p)]
+        if not missing:
+            continue
+        print(f"\n  → 补发缺失平台 {missing}: {it.title}")
+        _enrich_and_enqueue(storage, it, config, thumb_dir, ai_cfg, api_key)
 
 
 def _send(storage: Storage, config: dict, sheets: SheetsLogger | None) -> None:
