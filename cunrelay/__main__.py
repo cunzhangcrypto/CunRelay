@@ -32,6 +32,107 @@ def _filter_by_age(items, max_hours, now):
     return [it for it in items if it.published and it.published >= cutoff]
 
 
+def _extract_youtube_id(url: str) -> str | None:
+    """从 YouTube 链接提取视频 ID（watch?v=/youtu.be//shorts//live/）。"""
+    import re
+    m = re.search(r"(?:v=|youtu\.be/|shorts/|live/)([\w-]{11})", url or "")
+    return m.group(1) if m else None
+
+
+def _parse_sheet_time(s: str) -> str:
+    """'2026-08-13 20:15:18' → naive ISO 字符串（本地时区）。"""
+    try:
+        return datetime.strptime(s.strip(), "%Y-%m-%d %H:%M:%S").isoformat(
+            timespec="seconds")
+    except Exception:
+        return datetime.now().isoformat(timespec="seconds")
+
+
+def _restore(storage: Storage, config: dict) -> int:
+    """从 Google Sheets 把历史发布记录补回 SQLite（幂等，可反复执行）。
+
+    线上 DB 因缓存/意外丢失记录后，用 Sheets 这份备份恢复 UI 展示。
+    同一视频+平台只保留最早一条成功记录——历史重复发布（如补发 bug
+    产生的重复消息）不会被重复展示。返回恢复的发布记录条数。
+    """
+    try:
+        from .sheets import SheetsLogger
+        scfg = config.get("sheets", {})
+        if not (scfg.get("enabled") and scfg.get("spreadsheet_id")):
+            print("  [Restore] Sheets 未配置，跳过")
+            return 0
+        sheets = SheetsLogger(scfg, config.get("app", {}).get("timezone", "Asia/Shanghai"))
+        records = sheets.read_records()
+    except Exception as e:
+        print(f"  [Restore] skip: {e}")
+        return 0
+
+    if not records:
+        print("  [Restore] Sheets 无记录，跳过")
+        return 0
+
+    # 去重：同一 视频链接+平台 只保留最早一条成功记录
+    best: dict[tuple, dict] = {}
+    for r in records:
+        if r.get("status") != "success":
+            continue
+        key = (r.get("video_url") or "", r.get("platform") or "")
+        if key in best and (r.get("time") or "") >= (best[key].get("time") or ""):
+            continue
+        best[key] = r
+
+    restored = 0
+    for (video_url, platform), r in best.items():
+        vid = _extract_youtube_id(video_url)
+        if not vid:
+            continue
+        item_id = f"yt:{vid}"
+        title = r.get("video_title") or "（已恢复的历史记录）"
+        # seen_videos：防止 collect 把它当新视频重新采集+发送
+        storage.mark_video_seen(item_id, "youtube", "恢复", title, video_url, None)
+        # posts / publish_log 已有记录则跳过
+        if storage.has_post(item_id, platform) or storage.has_success(item_id, platform):
+            continue
+        published_at = _parse_sheet_time(r.get("time"))
+        post_id = storage.create_post(
+            video_id=item_id,
+            video_title=title,
+            video_url=video_url,
+            platform=platform,
+            content=(r.get("content_preview") or ""),
+            thumb_path=None,
+            send_at=published_at,
+        )
+        storage.mark_published(post_id, published_at)
+        storage.add_log(post_id, item_id, title, video_url, platform,
+                        "success", r.get("message") or "")
+        restored += 1
+        print(f"  [Restore] + {platform}: {title[:60]}")
+    if restored:
+        print(f"  [Restore] 恢复 {restored} 条发布记录（来自 Google Sheets）")
+    return restored
+
+
+def _migrate_telegram_links(storage: Storage, config: dict) -> None:
+    """把 publish_log 里旧格式 t.me/c/<数字ID>/ 链接修正为公开用户名格式。
+
+    放在 restore 之后执行，保证恢复写入的链接同样被修正。
+    私有频道（getChat 拿不到 username）时跳过。
+    """
+    try:
+        tg = config.get("publish", {}).get("telegram", {})
+        if not (tg.get("bot_token") and tg.get("chat_id")):
+            return
+        from .publishers.telegram import get_chat_username
+        username = get_chat_username(tg["bot_token"], str(tg["chat_id"]))
+        n = storage.migrate_telegram_links(str(tg["chat_id"]), username)
+        if n:
+            print(f"  [Migrate] 修正 {n} 条 Telegram 历史链接"
+                  f" (https://t.me/{username}/)")
+    except Exception as e:
+        print(f"  [Migrate] skip: {e}")
+
+
 def _enrich_and_enqueue(storage: Storage, item, config: dict,
                         thumb_dir: Path, ai_cfg: dict, api_key: str | None) -> None:
     """抓字幕/封面 → AI 生成 → 入队。
@@ -163,8 +264,8 @@ def _serve(config: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="cunrelay", description="CunRelay 内容自动分发")
     parser.add_argument("command", nargs="?", default="all",
-                        choices=["collect", "send", "export", "serve", "all"],
-                        help="collect=采集+AI+入队, send=发送到点排期, export=导出UI数据, serve=本地Web UI, all=全流程")
+                        choices=["collect", "send", "export", "serve", "restore", "all"],
+                        help="collect=采集+AI+入队, send=发送到点排期, export=导出UI数据, restore=从Sheets恢复历史记录, serve=本地Web UI, all=全流程")
     args = parser.parse_args()
 
     print("=" * 50)
@@ -185,24 +286,18 @@ def main() -> None:
     sheets = SheetsLogger(config.get("sheets", {}),
                           config.get("app", {}).get("timezone", "Asia/Shanghai"))
 
-    # ── Telegram 历史链接归一化 ─────────────────────────────────
-    # 旧版本生成的是 t.me/c/<数字ID>/ 私有格式，公开频道点不开。
-    # 用 getChat 拿到频道用户名后，把历史日志里的链接一次性修正为
-    # t.me/<username>/<msg_id>；私有频道无用户名则跳过。
-    try:
-        tg = config.get("publish", {}).get("telegram", {})
-        if tg.get("bot_token") and tg.get("chat_id"):
-            from .publishers.telegram import get_chat_username
-            username = get_chat_username(tg["bot_token"], str(tg["chat_id"]))
-            n = storage.migrate_telegram_links(str(tg["chat_id"]), username)
-            if n:
-                print(f"  [Migrate] 修正 {n} 条 Telegram 历史链接"
-                      f" (https://t.me/{username}/)")
-    except Exception as e:
-        print(f"  [Migrate] skip: {e}")
-
+    if args.command in ("all", "collect"):
+        # 先从 Sheets 恢复缺失的历史记录（幂等），再采集新视频
+        _restore(storage, config)
+    if args.command == "restore":
+        _restore(storage, config)
+    # Telegram 历史链接归一化：在 restore 之后执行，保证恢复写入的
+    # 链接同样被修正（旧格式 t.me/c/<数字ID>/ 公开频道点不开）。
+    _migrate_telegram_links(storage, config)
     if args.command in ("all", "collect"):
         _collect(storage, config)
+    if args.command == "restore":
+        _export(storage, config)
     if args.command in ("all", "send"):
         _send(storage, config, sheets)
     if args.command in ("all", "export"):

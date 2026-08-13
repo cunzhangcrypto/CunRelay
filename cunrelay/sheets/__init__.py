@@ -137,3 +137,31 @@ class SheetsLogger:
         except Exception as e:
             self._warn(f"写入失败: {e}")
             return False
+
+    def read_records(self) -> list[dict]:
+        """读取发布日志表全部记录（跳过表头），每行转成 dict."""
+        if not self.enabled:
+            return []
+        self._init()
+        if self._sheet is None:
+            return []
+        try:
+            rows = self._sheet.get_all_values()
+        except Exception as e:
+            self._warn(f"读取失败: {e}")
+            return []
+        out = []
+        for row in rows[1:]:
+            if not row or not any(cell.strip() for cell in row):
+                continue
+            d = {h: (row[i] if i < len(row) else "") for i, h in enumerate(HEADER)}
+            out.append({
+                "time": d["时间"],
+                "video_title": d["视频标题"],
+                "video_url": d["视频链接"],
+                "platform": d["平台"],
+                "status": d["状态"],
+                "message": d["发布链接/消息"],
+                "content_preview": d["内容预览"],
+            })
+        return out
