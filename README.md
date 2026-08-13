@@ -146,6 +146,7 @@ git push -u origin main
 | Secret | 必填 | 说明 |
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN` | ✅ | Cloudflare API Token，需 Pages 编辑权限（[创建指引](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)） |
+| `CLOUDFLARE_ACCOUNT_ID` | 建议 | Cloudflare 账户 ID。自定义 Token 无法自动检索账户时部署会失败，填上即可跳过检索直接部署。获取方式：登录 Dashboard，任意页面 URL 中 `dash.cloudflare.com/<ACCOUNT_ID>/` 那串即账户 ID |
 | `DEEPSEEK_API_KEY` | ✅ | DeepSeek 密钥 |
 | `TELEGRAM_BOT_TOKEN` | ✅ | Telegram Bot Token |
 | `TELEGRAM_CHAT_ID` | ✅ | 目标频道 ID |

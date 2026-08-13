@@ -74,7 +74,10 @@ jobs:
           key: cunrelay-db-v1
 
       # public/data.json 由上面的 run 生成，UI 是纯静态文件
+      # CLOUDFLARE_ACCOUNT_ID 可选：自定义 token 无法自动检索账户 ID 时，
+      # 填上即可跳过检索直接部署（Dashboard 任意页面 URL 里 dash.cloudflare.com/<ACCOUNT_ID>/ 那串）。
       - name: Deploy UI to Cloudflare Pages
         run: npx wrangler pages deploy public/ --project-name=${{ vars.CUNRELAY_PROJECT_NAME || 'cunrelay' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '' }}
