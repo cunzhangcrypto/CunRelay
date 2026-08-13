@@ -120,14 +120,17 @@ def _collect(storage: Storage, config: dict) -> None:
         _enrich_and_enqueue(storage, item, config, thumb_dir, ai_cfg, api_key)
 
     # ── 补发缺失平台 ────────────────────────────────────────────
-    # 72h 窗口内已 seen 的视频，若当前启用的平台有没发布过的，
+    # 72h 窗口内已 seen 的视频，若某个当前启用的平台「从未成功发布过」，
     # 重新入队补齐（例如：今天只发了 Telegram，明天启用 X 后补发 X）。
-    # enqueue_video 幂等：已发布的平台自动跳过，只补缺失平台。
+    # 判据用 publish_log 的 success 记录（has_success），而不是 posts 表：
+    # posts 可能因缓存/中断与 seen 不一致，若某平台已有 success 记录
+    # （哪怕 posts 记录丢失），绝不补发，防止重复发送。
+    # enqueue_video 幂等：已入队的平台自动跳过，只补缺失平台。
     for it in aged:
         if storage.is_new_video(it.item_id):
             continue
         missing = [p for p in enabled_platforms(config)
-                   if not storage.has_post(it.item_id, p)]
+                   if not storage.has_success(it.item_id, p)]
         if not missing:
             continue
         print(f"\n  → 补发缺失平台 {missing}: {it.title}")

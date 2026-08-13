@@ -116,6 +116,27 @@ class Storage:
         )
         return cur.fetchone() is not None
 
+    def has_success(self, video_id: str, platform: str | None = None) -> bool:
+        """publish_log 中该视频是否已有成功发布记录（可按平台过滤）。
+
+        以「真实成功发布过」为补发判据：即使 posts 表因缓存/中断与
+        seen_videos 不一致，只要该平台有过 success 记录，就绝不补发，
+        防止重复发送。
+        """
+        if platform:
+            cur = self._conn.execute(
+                "SELECT 1 FROM publish_log WHERE video_id = ?"
+                " AND platform = ? AND status = 'success' LIMIT 1",
+                (video_id, platform),
+            )
+        else:
+            cur = self._conn.execute(
+                "SELECT 1 FROM publish_log WHERE video_id = ?"
+                " AND status = 'success' LIMIT 1",
+                (video_id,),
+            )
+        return cur.fetchone() is not None
+
     def create_post(self, video_id: str, video_title: str, video_url: str,
                     platform: str, content: str, thumb_path: str | None,
                     send_at: str) -> int:
