@@ -23,6 +23,14 @@ function esc(s) {
   }[c]));
 }
 
+// 转义后把文本里的 URL 渲染成可点击链接（target=_blank）
+function linkify(s) {
+  return esc(s).replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+}
+
 function pill(cls, label, dot = true) {
   return `<span class="pill ${cls}">${dot ? "<i></i>" : ""}${esc(label)}</span>`;
 }
@@ -194,7 +202,7 @@ function renderPosts(d) {
     const st = STATUS_LABEL[r.status] || { text: r.status, cls: "" };
     const thumb = r.thumb_url || "no-thumb.svg";
     const err = r.error
-      ? `<span class="msg err">${esc(r.error)}</span>`
+      ? `<span class="msg err">${linkify(r.error)}</span>`
       : `<span class="msg ok">${esc(r.published_at ? "发布成功" : "等待中")}</span>`;
     return `<tr>
       <td class="thumb-cell"><img class="thumb" loading="lazy"
@@ -238,7 +246,7 @@ function renderLogs(d) {
       <td>${pill(pl.cls, pl.text)}</td>
       <td>${pill(st.cls, st.text)}</td>
       <td class="video-cell"><span class="video-title">${esc(r.video_title)}</span></td>
-      <td class="msg-cell"><span class="${msgCls}">${esc(r.message)}</span></td>
+      <td class="msg-cell"><span class="${msgCls}">${linkify(r.message)}</span></td>
     </tr>`;
   }).join("");
   renderPager("pager-logs", "logs", total);

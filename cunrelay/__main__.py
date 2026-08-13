@@ -177,6 +177,22 @@ def main() -> None:
     sheets = SheetsLogger(config.get("sheets", {}),
                           config.get("app", {}).get("timezone", "Asia/Shanghai"))
 
+    # ── Telegram 历史链接归一化 ─────────────────────────────────
+    # 旧版本生成的是 t.me/c/<数字ID>/ 私有格式，公开频道点不开。
+    # 用 getChat 拿到频道用户名后，把历史日志里的链接一次性修正为
+    # t.me/<username>/<msg_id>；私有频道无用户名则跳过。
+    try:
+        tg = config.get("publish", {}).get("telegram", {})
+        if tg.get("bot_token") and tg.get("chat_id"):
+            from .publishers.telegram import get_chat_username
+            username = get_chat_username(tg["bot_token"], str(tg["chat_id"]))
+            n = storage.migrate_telegram_links(str(tg["chat_id"]), username)
+            if n:
+                print(f"  [Migrate] 修正 {n} 条 Telegram 历史链接"
+                      f" (https://t.me/{username}/)")
+    except Exception as e:
+        print(f"  [Migrate] skip: {e}")
+
     if args.command in ("all", "collect"):
         _collect(storage, config)
     if args.command in ("all", "send"):

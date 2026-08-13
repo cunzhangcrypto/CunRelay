@@ -289,6 +289,12 @@ td.msg-cell { max-width: 320px; }
 }
 .msg.err { color: #C23B2E; }
 .msg.ok  { color: #0E8A5F; }
+.msg a {
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--brand-2);
+}
+.msg a:hover { text-decoration: underline; }
 
 td.link-cell a {
   font: 500 12px var(--mono);

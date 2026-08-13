@@ -229,5 +229,23 @@ class Storage:
                 stats[row["status"]] = row["n"]
         return stats
 
+    def migrate_telegram_links(self, chat_id: str, username: str | None) -> int:
+        """把 publish_log 里旧的 t.me/c/<数字ID>/ 链接修正为公开用户名格式。
+
+        频道为公开且能查到 username 时才有意义；私有频道传入 None 直接跳过。
+        返回修正的行数。
+        """
+        if not username:
+            return 0
+        old_prefix = f"https://t.me/c/{chat_id.lstrip('-100')}/"
+        new_prefix = f"https://t.me/{username}/"
+        cur = self._conn.execute(
+            "UPDATE publish_log SET message = REPLACE(message, ?, ?)"
+            " WHERE message LIKE ?",
+            (old_prefix, new_prefix, f"%{old_prefix}%"),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
     def close(self) -> None:
         self._conn.close()
