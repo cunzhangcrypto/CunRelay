@@ -129,6 +129,11 @@ def _collect(storage: Storage, config: dict) -> None:
     for it in aged:
         if storage.is_new_video(it.item_id):
             continue
+        # 只有「确认成功发布过至少一个平台」的视频才参与补发：
+        # 从未成功发布过的（如 AI 失败被 seen、或 DB 状态不全），
+        # 一律不进入补发路径，避免把"漏发重试"误当"平台补发"反复发送。
+        if not storage.has_success(it.item_id):
+            continue
         missing = [p for p in enabled_platforms(config)
                    if not storage.has_success(it.item_id, p)]
         if not missing:

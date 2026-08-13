@@ -46,12 +46,18 @@ jobs:
           CRON=$(sed -n 's/^[[:space:]]*-[[:space:]]*cron:[[:space:]]*"\([^"]*\)".*/\1/p' .github/workflows/relay.yml | head -n1)
           echo "cron=${CRON}" >> "$GITHUB_OUTPUT"
 
+      # 缓存 key 必须每次运行唯一（run_id），否则 cache/save 因 key 已存在
+      # 会静默跳过，DB 永远停留在最早的"中间态"（seen 有记录、posts 空），
+      # 导致补发逻辑反复把已处理的视频当"缺失平台"重发。
+      # restore 用前缀回退，命中最近一次保存的 DB。
       - name: Restore database from cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         id: db-cache
         with:
           path: output/cunrelay.db
-          key: cunrelay-db-v1
+          key: cunrelay-db-${{ github.run_id }}
+          restore-keys: |
+            cunrelay-db-
 
       - name: Run CunRelay (collect + send + export)
         env:
@@ -71,7 +77,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: output/cunrelay.db
-          key: cunrelay-db-v1
+          key: cunrelay-db-${{ github.run_id }}
 
       # public/data.json 由上面的 run 生成，UI 是纯静态文件
       # CLOUDFLARE_ACCOUNT_ID 可选：自定义 token 无法自动检索账户 ID 时，

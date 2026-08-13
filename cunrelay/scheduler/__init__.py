@@ -114,6 +114,13 @@ def send_due(storage: Storage, config: dict, sheets=None) -> int:
         platform = post["platform"]
         now = local_now(config)
         now_s = _iso(now)
+        # 最后防线：该视频+平台若已有成功发布记录（例如缓存不一致/补发
+        # 逻辑误入队造成重复），直接标记完成，绝不重复发送。
+        if storage.has_success(post["video_id"], platform):
+            print(f"  [Scheduler] Skip {platform}: already published, mark done")
+            storage.mark_published(post["id"], now_s)
+            processed += 1
+            continue
         publisher = build_publisher(platform, config)
         if publisher is None:
             print(f"  [Scheduler] Publisher '{platform}' not available, skip")
