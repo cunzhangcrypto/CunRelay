@@ -134,11 +134,14 @@ def _migrate_telegram_links(storage: Storage, config: dict) -> None:
 
 
 def _enrich_and_enqueue(storage: Storage, item, config: dict,
-                        thumb_dir: Path, ai_cfg: dict, api_key: str | None) -> None:
+                        thumb_dir: Path, ai_cfg: dict, api_key: str | None) -> bool:
     """抓字幕/封面 → AI 生成 → 入队。
 
     enqueue_video 内部按「视频 + 平台」判重（has_post），幂等：
     已入队的平台自动跳过，只补齐缺失的平台。
+
+    返回是否成功入队；失败（无 key / AI 生成失败）时返回 False，
+    调用方应回滚 seen 标记，让下一轮重新尝试，避免视频被永久跳过。
     """
     video_id = item.item_id.split(":", 1)[-1]
     transcript = fetch_transcript(video_id, ai_cfg.get("max_transcript_chars", 6000))
@@ -151,7 +154,7 @@ def _enrich_and_enqueue(storage: Storage, item, config: dict,
 
     if not api_key:
         print("    (skipped AI copy — no API key)")
-        return
+        return False
     copy = generate_platform_copy(
         video=item,
         transcript=transcript,
@@ -162,10 +165,50 @@ def _enrich_and_enqueue(storage: Storage, item, config: dict,
         max_transcript_chars=int(ai_cfg.get("max_transcript_chars", 6000)),
     )
     if not copy:
+        # DeepSeek 偶发输出不完整/截断，立即重试一次成功率很高
+        print("    [AI] 首次生成失败，重试一次…")
+        copy = generate_platform_copy(
+            video=item,
+            transcript=transcript,
+            api_key=api_key,
+            model=ai_cfg.get("model", "deepseek-chat"),
+            api_base=ai_cfg.get("api_base", "https://api.deepseek.com"),
+            timeout=int(ai_cfg.get("timeout", 180)),
+            max_transcript_chars=int(ai_cfg.get("max_transcript_chars", 6000)),
+        )
+    if not copy:
         print(f"    AI copy failed for '{item.title}', skipped")
-        return
+        return False
     created = enqueue_video(storage, item, copy, config, thumb)
     print(f"    enqueued {created} posts")
+    return created > 0
+
+
+def _recover_stuck_seen(storage: Storage, config: dict) -> None:
+    """清理"已 seen 但从未成功入队"的孤儿标记。
+
+    历史 bug 会让视频在 AI 生成失败时被 mark_video_seen 后永久跳过
+    （如昨天"跨境多账号总被关联"那条）。这里把 72h 窗口内 seen 过、
+    但 posts 表没有任何记录的视频标记删除，下一轮重新处理。
+    只清理窗口内的，避免把太老的视频重新拉起来。
+    """
+    max_age = int(config.get("app", {}).get("max_item_age_hours", 72))
+    cutoff = (local_now(config) - timedelta(hours=max_age)).isoformat(
+        timespec="seconds")
+    rows = storage._conn.execute(
+        "SELECT item_id, title FROM seen_videos WHERE first_seen >= ?",
+        (cutoff,),
+    ).fetchall()
+    removed = 0
+    for row in rows:
+        item_id = row["item_id"]
+        if storage.has_any_post(item_id):
+            continue
+        storage.remove_seen(item_id)
+        removed += 1
+        print(f"  [Recover] 清除未入队的 seen 标记，重新处理: {row['title'][:60]}")
+    if removed:
+        print(f"  [Recover] 共恢复 {removed} 个此前失败跳过的视频")
 
 
 def _collect(storage: Storage, config: dict) -> None:
@@ -186,6 +229,8 @@ def _collect(storage: Storage, config: dict) -> None:
         return
 
     print("\n[Collect] Discovering YouTube videos...")
+    # 自我修复：清理历史上"AI 失败后遗留"的孤儿 seen 标记，让它们重试
+    _recover_stuck_seen(storage, config)
     now = local_now(config)
     items = YouTubeCollector(channels).collect()
     aged = _filter_by_age(items, max_age, now)
@@ -218,7 +263,11 @@ def _collect(storage: Storage, config: dict) -> None:
         print(f"\n  → New video: {item.title}")
         storage.mark_video_seen(item.item_id, item.source, item.source_name,
                                 item.title, item.url, None)
-        _enrich_and_enqueue(storage, item, config, thumb_dir, ai_cfg, api_key)
+        if not _enrich_and_enqueue(storage, item, config, thumb_dir, ai_cfg, api_key):
+            # 处理失败（如 AI 生成不完整）：回滚 seen 标记，
+            # 下一轮自动重试，避免"已 seen 但从未发送"的视频被永久跳过。
+            storage.remove_seen(item.item_id)
+            print("  → 处理失败，已回滚标记，下一轮将重试")
 
     # ── 补发缺失平台 ────────────────────────────────────────────
     # 72h 窗口内已 seen 的视频，若某个当前启用的平台「从未成功发布过」，

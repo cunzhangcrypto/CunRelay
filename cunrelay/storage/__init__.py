@@ -100,6 +100,13 @@ class Storage:
         )
         self._conn.commit()
 
+    def remove_seen(self, item_id: str) -> None:
+        """删除 seen 标记（处理失败时回滚，让下一轮重新尝试）。"""
+        self._conn.execute(
+            "DELETE FROM seen_videos WHERE item_id = ?", (item_id,)
+        )
+        self._conn.commit()
+
     def get_thumb(self, item_id: str) -> str | None:
         cur = self._conn.execute(
             "SELECT thumb_path FROM seen_videos WHERE item_id = ?", (item_id,)
@@ -113,6 +120,13 @@ class Storage:
         cur = self._conn.execute(
             "SELECT 1 FROM posts WHERE video_id = ? AND platform = ?",
             (video_id, platform),
+        )
+        return cur.fetchone() is not None
+
+    def has_any_post(self, video_id: str) -> bool:
+        """posts 表是否已有该视频的任何入队记录（不限平台/状态）。"""
+        cur = self._conn.execute(
+            "SELECT 1 FROM posts WHERE video_id = ? LIMIT 1", (video_id,)
         )
         return cur.fetchone() is not None
 
