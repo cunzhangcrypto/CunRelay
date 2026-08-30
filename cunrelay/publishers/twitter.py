@@ -19,6 +19,11 @@ class XPublisher(BasePublisher):
 
     def __init__(self, api_key: str, api_key_secret: str,
                  access_token: str, access_token_secret: str) -> None:
+        # 掩码指纹：只显示尾号，方便核对 CI 加载的到底是哪套密钥，
+        # 不泄露完整值。
+        print(f"  [X] auth loaded: api_key=…{api_key[-6:]}, "
+              f"token=…{access_token[-6:]}, "
+              f"secret_len={len(access_token_secret)}")
         self.auth = OAuth1(
             api_key, api_key_secret,
             resource_owner_key=access_token,
