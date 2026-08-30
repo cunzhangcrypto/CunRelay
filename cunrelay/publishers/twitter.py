@@ -22,17 +22,29 @@ def weighted_len(text: str) -> int:
 
 
 def truncate_to_weighted(text: str, limit: int = MAX_WEIGHTED) -> str:
-    """截断到加权长度不超过 ``limit``（尽量不切断 emoji 代理对）。"""
+    """截断到加权长度不超过 ``limit``。
+
+    优先停在完整句子末尾（。！？…！？换行，避免发出去是半句话），
+    兜底才在字符边界切断，并尽量不切断 emoji 代理对。
+    """
     if weighted_len(text) <= limit:
         return text
     chars = list(text)
     current = 0
-    for i, ch in enumerate(chars):
+    i = 0
+    last_break = -1  # 完整句末的字符下标（≤ limit 内）
+    while i < len(chars):
+        ch = chars[i]
         w = 1 if ord(ch) < 128 else 2
         if current + w > limit:
-            return "".join(chars[:i]).rstrip()
+            break
         current += w
-    return text
+        i += 1
+        if ch in "。！？！?…\n；;\n":
+            last_break = i
+    if last_break > 0:
+        return "".join(chars[:last_break]).rstrip()
+    return "".join(chars[:i]).rstrip()
 
 
 class XPublisher(BasePublisher):
