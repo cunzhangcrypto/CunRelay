@@ -310,6 +310,20 @@ def _serve(config: dict) -> None:
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
+def _log_x_fingerprint(config: dict) -> None:
+    """启动即打印 X 密钥的掩码指纹（尾号），方便核对 CI 读到的是哪套 token。
+
+    只在 X 已启用且 4 项密钥齐全时输出；不泄露完整 secret。
+    """
+    x = config.get("publish", {}).get("x", {})
+    if not x.get("api_key"):
+        return
+    api_key = x["api_key"]
+    tok = x.get("access_token") or ""
+    print(f"  [X] loaded fingerprint: api_key=…{api_key[-6:]}, "
+          f"access_token=…{tok[-6:] if len(tok) >= 6 else '(empty)'}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="cunrelay", description="CunRelay 内容自动分发")
     parser.add_argument("command", nargs="?", default="all",
@@ -322,6 +336,7 @@ def main() -> None:
     print("=" * 50)
 
     config = load_config(os.environ.get("CONFIG_PATH"))
+    _log_x_fingerprint(config)
 
     if args.command == "serve":
         _serve(config)
