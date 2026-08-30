@@ -11,7 +11,28 @@ from .base import BasePublisher, PublishResult
 API = "https://api.x.com"
 # v2 的 media upload 已被 Twitter 下线（410），必须用 v1.1 的 multipart 接口
 UPLOAD_API = "https://upload.twitter.com/1.1/media/upload.json"
-MAX_CHARS = 280
+# X 用"加权字符数"计长度：ASCII 记 1，CJK/非 ASCII 记 2，总数上限 280。
+# 纯中文内容实际只能到 140 个中文字符，再多会返回 403 Forbidden。
+MAX_WEIGHTED = 280
+
+
+def weighted_len(text: str) -> int:
+    """按 X 规则计算加权字符数：ASCII=1，其它（中文/emoji）=2。"""
+    return sum(1 if ord(ch) < 128 else 2 for ch in text)
+
+
+def truncate_to_weighted(text: str, limit: int = MAX_WEIGHTED) -> str:
+    """截断到加权长度不超过 ``limit``（尽量不切断 emoji 代理对）。"""
+    if weighted_len(text) <= limit:
+        return text
+    chars = list(text)
+    current = 0
+    for i, ch in enumerate(chars):
+        w = 1 if ord(ch) < 128 else 2
+        if current + w > limit:
+            return "".join(chars[:i]).rstrip()
+        current += w
+    return text
 
 
 class XPublisher(BasePublisher):
@@ -57,9 +78,9 @@ class XPublisher(BasePublisher):
 
     def publish(self, post: Row) -> PublishResult:
         text = post["content"].strip()
-        if len(text) > MAX_CHARS:
-            print(f"  [X] Truncating {len(text)} -> {MAX_CHARS} chars")
-            text = text[:MAX_CHARS]
+        if weighted_len(text) > MAX_WEIGHTED:
+            print(f"  [X] Truncating weighted {weighted_len(text)} -> {MAX_WEIGHTED}")
+            text = truncate_to_weighted(text)
 
         media_id = None
         thumb = post["thumb_path"]
