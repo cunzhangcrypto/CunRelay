@@ -294,7 +294,9 @@ def _collect(storage: Storage, config: dict) -> None:
 
 def _send(storage: Storage, config: dict, sheets: SheetsLogger | None) -> None:
     print("\n[Send] Processing due posts...")
-    send_due(storage, config, sheets)
+    # 手动触发（collect/send/all）视为"立刻发送"：把等待重试缓冲的帖子
+    # 也一并送发，不受 30 分钟重试延迟限制，便于实时验证发布是否生效。
+    send_due(storage, config, sheets, force_retry=True)
 
 
 def _serve(config: dict) -> None:

@@ -189,6 +189,19 @@ class Storage:
         )
         return cur.fetchall()
 
+    def retry_pending_posts(self) -> list[sqlite3.Row]:
+        """返回"等待重试缓冲"的 queued 帖子（已尝试过、仅受 send_at 延迟）。
+
+        这类帖子处于 retry_count >= 1 的非最终失败状态，受 30 分钟重试
+        缓冲而 send_at 在将来。手动触发时应立即重发，不等缓冲。
+        """
+        cur = self._conn.execute(
+            "SELECT * FROM posts WHERE status = ? AND retry_count >= 1"
+            " AND published_at IS NULL ORDER BY send_at ASC",
+            (POST_QUEUED,),
+        )
+        return cur.fetchall()
+
     def posts(self, limit: int = 100, platform: str | None = None,
               status: str | None = None) -> list[sqlite3.Row]:
         sql = "SELECT * FROM posts WHERE 1=1"

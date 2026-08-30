@@ -99,8 +99,13 @@ def enqueue_video(storage: Storage, video: CollectedItem, copy: dict,
     return count
 
 
-def send_due(storage: Storage, config: dict, sheets=None) -> int:
+def send_due(storage: Storage, config: dict, sheets=None,
+             force_retry: bool = False) -> int:
     """Publish every queued post whose send_at has arrived.
+
+    ``force_retry=True``（手动触发）时，额外把"等待重试缓冲"的帖子
+    （已尝试过、仅受 send_at 延迟的非最终失败）也一并送发，实现
+    "手动跑 = 立即重发"，而不是空等 30 分钟缓冲。
 
     On failure the post is retried up to ``max_retries`` total attempts
     (2 = 首发 + 只重试 1 次) with a ``retry_delay_minutes`` interval,
@@ -114,6 +119,13 @@ def send_due(storage: Storage, config: dict, sheets=None) -> int:
 
     now = local_now(config)
     due = storage.due_posts(_iso(now))
+    if force_retry:
+        pending = storage.retry_pending_posts()
+        due_ids = {p["id"] for p in due}
+        extra = [p for p in pending if p["id"] not in due_ids]
+        if extra:
+            print(f"  [Scheduler] +{len(extra)} retry-pending forced (manual)")
+        due = list(due) + extra
     if not due:
         print("  [Scheduler] No due posts")
         return 0
