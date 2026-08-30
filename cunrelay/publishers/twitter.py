@@ -1,6 +1,5 @@
 """X (Twitter) publisher — OAuth 1.0a, media upload + create tweet."""
 
-import base64
 from pathlib import Path
 from sqlite3 import Row
 
@@ -10,7 +9,8 @@ from requests_oauthlib import OAuth1
 from .base import BasePublisher, PublishResult
 
 API = "https://api.x.com"
-UPLOAD_API = "https://upload.x.com"
+# v2 的 media upload 已被 Twitter 下线（410），必须用 v1.1 的 multipart 接口
+UPLOAD_API = "https://upload.twitter.com/1.1/media/upload.json"
 MAX_CHARS = 280
 
 
@@ -26,22 +26,23 @@ class XPublisher(BasePublisher):
         )
 
     def _upload_media(self, thumb: str) -> str | None:
-        """Upload an image and return its media_id."""
+        """Upload an image via API v1.1 and return its media_id_string."""
         try:
             with open(thumb, "rb") as f:
-                media_data = base64.b64encode(f.read()).decode("ascii")
+                media_data = f.read()
         except Exception as e:
             print(f"  [X] Media read failed: {e}")
             return None
         try:
+            # v1.1 必须要 multipart/form-data（原始二进制），返回 media_id_string
             resp = requests.post(
-                f"{UPLOAD_API}/2/media/upload",
+                UPLOAD_API,
                 auth=self.auth,
-                json={"media_data": media_data, "media_category": "tweet_image"},
+                files={"media": media_data},
                 timeout=120,
             )
             resp.raise_for_status()
-            return resp.json()["data"]["id"]
+            return resp.json()["media_id_string"]
         except Exception as e:
             detail = ""
             if hasattr(e, "response") and e.response is not None:
