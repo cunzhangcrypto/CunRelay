@@ -66,8 +66,6 @@ def enqueue_video(storage: Storage, video: CollectedItem, copy: dict,
     now = local_now(config)
     count = 0
     for platform in enabled_platforms(config):
-        if storage.has_post(video.item_id, platform):
-            continue
         if platform == "telegram":
             content = _compose_telegram(copy, video.url)
         else:
@@ -75,7 +73,18 @@ def enqueue_video(storage: Storage, video: CollectedItem, copy: dict,
         if not content:
             print(f"  [Scheduler] Skip {platform}: empty copy")
             continue
+
         send_at = now + timedelta(minutes=int(offsets.get(platform, 0)))
+        # 幂等：该视频+平台已有记录
+        if storage.has_post(video.item_id, platform):
+            # 已存在的 failed 尾态记录（如权限配置错误导致永久失败）→
+            # 重置为 queued 重新发送；已 queued / published 的记录不动，
+            # 绝不重复创建。
+            if storage.requeue_failed_post(
+                    video.item_id, platform, content, _iso(send_at)):
+                print(f"  [Scheduler] Requeued {platform} (was failed)")
+                count += 1
+            continue
         storage.create_post(
             video_id=video.item_id,
             video_title=video.title,

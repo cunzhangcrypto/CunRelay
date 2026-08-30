@@ -130,6 +130,23 @@ class Storage:
         )
         return cur.fetchone() is not None
 
+    def requeue_failed_post(self, video_id: str, platform: str,
+                            content: str, send_at: str) -> bool:
+        """把该视频+平台处于 'failed' 尾态的记录重置回 queued，供重发。
+
+        用于处理"权限/临时故障修复后，之前永久失败的记录该重新发送"
+        的场景（如 X Token 从只读修成可写）。已 queued / published 或
+        不存在的记录一律不改动（幂等，绝不重复）。返回是否真的重置。
+        """
+        cur = self._conn.execute(
+            "UPDATE posts SET status = ?, content = ?, send_at = ?,"
+            " error = NULL, retry_count = 0, published_at = NULL"
+            " WHERE video_id = ? AND platform = ? AND status = ?",
+            (POST_QUEUED, content, send_at, video_id, platform, POST_FAILED),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def has_success(self, video_id: str, platform: str | None = None) -> bool:
         """publish_log 中该视频是否已有成功发布记录（可按平台过滤）。
 
