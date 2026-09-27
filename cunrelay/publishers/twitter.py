@@ -112,6 +112,28 @@ class XPublisher(BasePublisher):
             )
             resp.raise_for_status()
             tweet_id = resp.json()["data"]["id"]
+
+            # 正文零外链避免降权：视频链接以"首条评论"形式补发。
+            # 失败不影响主推成功（只打日志），不重试。
+            video_url = post["video_url"]
+            if video_url:
+                try:
+                    reply_payload = {
+                        "text": f"完整实测视频：{video_url}",
+                        "reply": {"in_reply_to_tweet_id": tweet_id},
+                    }
+                    requests.post(
+                        f"{API}/2/tweets",
+                        auth=self.auth,
+                        json=reply_payload,
+                        timeout=60,
+                    ).raise_for_status()
+                except Exception as e:
+                    detail = ""
+                    if hasattr(e, "response") and e.response is not None:
+                        detail = e.response.text[:300]
+                    print(f"  [X] Reply with video link failed: {e} {detail}")
+
             return PublishResult(True, f"tweet {tweet_id}",
                                  f"https://x.com/i/status/{tweet_id}")
         except Exception as e:
